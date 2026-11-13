@@ -98,6 +98,8 @@ EXTRACT = """(args) => {
   if (mode === 'full' || mode === 'auto') {
     const doc = cleanClone();
     const drop = 'script,style,noscript,svg,template,iframe,link,meta' + (keepNav ? '' : ',nav,header,footer,[role=navigation],[role=banner],[role=contentinfo]');
+    // Navs found by MENUS become placeholders that with_menus() turns into tables.
+    if (!keepNav) doc.querySelectorAll('[data-rp-nav]').forEach(e => { const p = doc.createElement('p'); p.textContent = 'RPNAV' + e.getAttribute('data-rp-nav'); e.replaceWith(p); });
     doc.querySelectorAll(drop).forEach(e => e.remove());
     // Sidebars hold real data as often as noise: Fab puts price, license and publish date in an <aside>. Drop one only when it is mostly links (related products, tag clouds) or nearly empty.
     let asides = 0;
@@ -116,8 +118,11 @@ EXTRACT = """(args) => {
   return out;
 }"""
 
-# The page's top bar: the outermost header/banner outside main, article and footer that starts within the first 400 px, else the first such nav. heise marks every teaser module with <header>, so position decides, not the tag alone. Its visible links and buttons in page order, without repeats. Left out: entries of closed hover or click menus, and buttons whose only text is an aria-label or screen-reader-only (tagesschau's "Untermenü Inland einblenden", carousel arrows), since they only operate the bar. Links named only by an aria-label (a logo) stay.
-HEADER = """() => {
+# Menus as compact tables, collected on the live page because visibility needs layout:
+# - header: the page's top bar, the outermost header/banner outside main, article and footer that starts within the first 400 px, else the first such nav. heise marks every teaser module with <header>, so position decides, not the tag alone.
+# - navs: every other outermost nav outside header and footer (GitHub's profile tabs, breadcrumbs, pagination). Each is marked data-rp-nav=N, which survives the clone, so full mode can put its table where the nav stood.
+# Items are the visible links and buttons in page order, without repeats. Left out: entries of closed hover or click menus, and buttons whose only text is an aria-label or screen-reader-only (tagesschau's "Untermenü Inland einblenden", carousel arrows), since they only operate the menu. Links named only by an aria-label (a logo) stay.
+MENUS = """() => {
   const outside = 'main, article, footer, aside, [role=main], [role=contentinfo], [role=complementary]';
   const atTop = (e) => { const r = e.getBoundingClientRect(); return r.height > 0 && r.top + scrollY < 400; };
   let roots = [...document.querySelectorAll('header, [role=banner]')].filter(e => !(e.parentElement && e.parentElement.closest('header, [role=banner], ' + outside)) && !e.closest('[data-rp-hidden]') && atTop(e));
@@ -130,48 +135,78 @@ HEADER = """() => {
     for (let n = w.nextNode(); n; n = w.nextNode()) if (n.parentElement && shown(n.parentElement)) t += ' ' + n.textContent;
     return t;
   };
-  const items = [], seen = new Set();
-  for (const root of roots) for (const el of root.querySelectorAll('a[href], button, [role=button], [role=menuitem], [role=tab]')) {
-    if (el.closest('[data-rp-hidden]') || (el.parentElement && el.parentElement.closest('a, button'))) continue;
-    if (!shown(el) || (el.checkVisibility && !el.checkVisibility({ opacityProperty: true, visibilityProperty: true }))) continue;
-    const href = el.tagName === 'A' && /^https?:/.test(el.href) ? el.href : '';
-    const text = (visibleText(el).replace(/\\s+/g, ' ').trim() || (href && (el.getAttribute('aria-label') || el.title) || '')).replace(/\\s+/g, ' ').trim();
-    if (!text || text.length > 60) continue;
-    if (seen.has(text + '|' + href)) continue;
-    seen.add(text + '|' + href);
-    items.push([text, href]);
+  const items = (containers) => {
+    const out = [], seen = new Set();
+    for (const root of containers) for (const el of root.querySelectorAll('a[href], button, [role=button], [role=menuitem], [role=tab]')) {
+      if (el.closest('[data-rp-hidden]') || (el.parentElement && el.parentElement.closest('a, button'))) continue;
+      if (!shown(el) || (el.checkVisibility && !el.checkVisibility({ opacityProperty: true, visibilityProperty: true }))) continue;
+      const href = el.tagName === 'A' && /^https?:/.test(el.href) ? el.href : '';
+      const text = (visibleText(el).replace(/\\s+/g, ' ').trim() || (href && (el.getAttribute('aria-label') || el.title) || '')).replace(/\\s+/g, ' ').trim();
+      if (!text || text.length > 60 || seen.has(text + '|' + href)) continue;
+      seen.add(text + '|' + href);
+      out.push([text, href]);
+    }
+    return out;
+  };
+  document.querySelectorAll('[data-rp-nav]').forEach(e => e.removeAttribute('data-rp-nav'));
+  const navs = [];
+  for (const nav of document.querySelectorAll('nav, [role=navigation]')) {
+    if (roots.some(r => r.contains(nav)) || (nav.parentElement && nav.parentElement.closest('nav, [role=navigation]')) || nav.closest('footer, [role=contentinfo], [data-rp-hidden]')) continue;
+    const found = items([nav]);
+    if (!found.length) continue;
+    const by = nav.getAttribute('aria-labelledby');
+    const label = (nav.getAttribute('aria-label') || (by && document.getElementById(by) && document.getElementById(by).innerText) || '').replace(/\\s+/g, ' ').trim();
+    nav.setAttribute('data-rp-nav', navs.length);
+    navs.push({ label, items: found });
   }
-  return items;
+  return { header: items(roots), navs };
 }"""
 
 LINKS = """() => [...document.querySelectorAll('a[href]')].map(a => [(a.innerText || a.title || a.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim(), a.href]).filter(([t, h]) => h.startsWith('http'))"""
 
 
-HEADER_COLUMNS = 8
-HEADER_MAX = 48
+MENU_COLUMNS = 8
+MENU_MAX = 48
+NAV_TOKEN_RE = re.compile(r"RPNAV(\d+)")
 
 
-def header_table(items, notes):
-    """The top bar as a Markdown table, HEADER_COLUMNS cells per row: '| [Community](…) | [Neuigkeiten](…) | Anmelden |'. Buttons without a link stay plain text."""
+def menu_table(items, label, notes):
+    """A menu as a Markdown table, MENU_COLUMNS cells per row: '| [Community](…) | [Neuigkeiten](…) | Anmelden |'. Buttons without a link stay plain text."""
     if not items:
         return ""
-    if len(items) > HEADER_MAX:
-        notes.append(f"header: {len(items)} entries, kept the first {HEADER_MAX}; keep_nav keeps the whole header")
-        items = items[:HEADER_MAX]
+    if len(items) > MENU_MAX:
+        notes.append(f"menu {label!r}: {len(items)} entries, kept the first {MENU_MAX}; keep_nav keeps the whole menu")
+        items = items[:MENU_MAX]
     cells = [(f"[{t}]({h})" if h else t).replace("|", "\\|") for t, h in items]
-    rows = [cells[i:i + HEADER_COLUMNS] for i in range(0, len(cells), HEADER_COLUMNS)]
+    rows = [cells[i:i + MENU_COLUMNS] for i in range(0, len(cells), MENU_COLUMNS)]
     width = len(rows[0])
     lines = ["| " + " | ".join(r + [""] * (width - len(r))) + " |" for r in rows]
     lines.insert(1, "|" + "---|" * width)
-    return "## Kopfleiste\n\n" + "\n".join(lines)
+    return "\n".join(lines)
 
 
-def with_header(body, items, chosen, o, notes):
-    """Put the top bar in front of the extracted text, unless it is already there (keep_nav in full mode)."""
+def with_menus(body, menus, chosen, o, notes, header=True):
+    """Put the top bar in front of the extracted text as a table under '## Kopfleiste', and turn the nav placeholders full mode left (RPNAV3) into tables labelled with the nav's aria-label. keep_nav in full mode leaves both in place as they are."""
     if o["keep_nav"] and chosen == "full":
         return body
-    table = header_table(items, notes)
-    return f"{table}\n\n{body}" if table else body
+    navs, seen = menus["navs"], set()
+
+    # A nav without any link only holds buttons that work the page (Wikipedia's "Verbergen"), and a nav whose entries repeat an earlier one is the same menu twice (heise's site index).
+    def nav(m):
+        n = int(m.group(1))
+        if n >= len(navs) or not any(h for _, h in navs[n]["items"]):
+            return ""
+        texts = tuple(t for t, _ in navs[n]["items"])
+        if texts in seen:
+            return ""
+        seen.add(texts)
+        table = menu_table(navs[n]["items"], navs[n]["label"], notes)
+        return f"**{navs[n]['label']}:**\n\n{table}" if navs[n]["label"] else table
+    body = NAV_TOKEN_RE.sub(nav, body)
+    if not header:
+        return body
+    table = menu_table(menus["header"], "Kopfleiste", notes)
+    return f"## Kopfleiste\n\n{table}\n\n{body}" if table else body
 
 
 def text_weight(md):
@@ -250,7 +285,7 @@ def pick(res, mode, notes):
 
 
 async def extract_frame(frame, o, notes, header=True):
-    """Extract one frame as a document of its own: its own CSS decides what is hidden, its own shadow roots are flattened, and the extractor is chosen for it alone. header puts the top bar in front as a table (off for further pages and iframes, where it would only repeat). Falls back to the frame's plain innerText if the extractors cannot even be injected."""
+    """Extract one frame as a document of its own: its own CSS decides what is hidden, its own shadow roots are flattened, and the extractor is chosen for it alone. Menus become tables (with_menus); header puts the top bar in front (off for further pages and iframes, where it would only repeat). Falls back to the frame's plain innerText if the extractors cannot even be injected."""
     try:
         if not o["no_details"]:
             await frame.evaluate("() => document.querySelectorAll('details:not([open])').forEach(d => d.open = true)")
@@ -260,10 +295,10 @@ async def extract_frame(frame, o, notes, header=True):
             if shadows:
                 notes.append(f"flattened {shadows} shadow root(s)")
         await load_libs(frame)
+        menus = await frame.evaluate(MENUS)
         res = await frame.evaluate(EXTRACT, [o["mode"], o["keep_nav"], NOISE_SELECTOR_RE])
         chosen, body = pick(res, o["mode"], notes)
-        if header:
-            body = with_header(body, await frame.evaluate(HEADER), chosen, o, notes)
+        body = with_menus(body, menus, chosen, o, notes, header)
     except Exception as e:
         notes.append(f"extractors failed ({str(e).splitlines()[0]}); returning the page's plain text")
         chosen, body = "innertext", (await frame.evaluate("() => document.body ? document.body.innerText : ''")).strip()

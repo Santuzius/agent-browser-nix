@@ -112,7 +112,10 @@ On the command line (`web-renderer --help`) the same options apply, plus `--urls
 - **Extraction:**
   - Defuddle, Readability and a whole-page mode run side by side. `auto` keeps whichever loses the least text. It takes the whole page when it holds at most 3,000 characters of text, when the extractor kept less than a third of it, when the extractor left a section empty that has text on the page, or when it dropped whole sections, heading included, that hold at least a quarter of the page text (Defuddle did this to the offer list of a Geizhals product page).
   - Sidebars (`aside`) stay unless they are mostly links; Fab keeps price and license in one. `keep_nav` also keeps navigation, header, footer and link-heavy sidebars.
-  - The top bar (the page's first `header` or `nav`) comes first as a table under `## Kopfleiste`, eight entries per row: its visible links and labelled buttons. Entries of closed hover menus are not part of it; their parent link usually leads to the same pages.
+  - Menus become compact tables, eight entries per row, holding their visible links and labelled buttons:
+    - the top bar (the page's first `header`, else its first `nav`) comes first under `## Kopfleiste`;
+    - every other `nav` outside header and footer (GitHub's profile tabs, Wikipedia's table of contents, breadcrumbs) stays where it stood, under its `aria-label` in bold;
+    - menus without links and repeats of an earlier menu are left out, and so are entries of closed hover menus; their parent link usually leads to the same pages.
   - With `grep`, the whole page is always searched.
   - If injecting the extractors fails, the page's plain text is returned.
 - **iframes and web components:** Every visible iframe becomes a section of its own; web-component shadow DOM is flattened into the page.
