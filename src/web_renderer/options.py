@@ -6,7 +6,7 @@ EXPAND_RE = r"^\s*(\+\s*)?(mehr laden|mehr anzeigen|weitere laden|weitere anzeig
 NEXT_RE = r"^\s*(weiter|nächste( seite)?|next( page)?|vor|›|»|>|→)\s*$"
 
 
-DEFAULTS = dict(mode="auto", max_length=20000, start=0, part=None, full_urls=False, browser="auto", expand=10, expand_pattern=EXPAND_RE, scroll=0, pages=0, next_pattern=NEXT_RE, iframes="separate", max_iframes=5, iframe_depth=3, no_shadow=False, accept_cookies=False, keep_nav=False, no_details=False, wait_for=None, wait=8000, timeout=45000, links=None, links_only=False, grep=None, exclude=None, context=0, images=False, load_media=False, screenshot=None, click_rows=None, max_rows=30, fill=None, select=None, submit=False)
+DEFAULTS = dict(mode="auto", max_length=20000, start=0, part=None, full_urls=False, browser="auto", expand=10, expand_pattern=EXPAND_RE, scroll=0, pages=0, next_pattern=NEXT_RE, iframes="separate", max_iframes=5, iframe_depth=3, no_shadow=False, accept_cookies=False, keep_nav=False, menus="inline", no_details=False, wait_for=None, wait=8000, timeout=45000, links=None, links_only=False, grep=None, exclude=None, context=0, images=False, load_media=False, screenshot=None, click_rows=None, max_rows=30, fill=None, select=None, submit=False)
 
 
 def button_pattern(texts):

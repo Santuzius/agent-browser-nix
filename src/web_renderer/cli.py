@@ -63,6 +63,7 @@ def main():
     ap.add_argument("--iframe-depth", type=int, default=3)
     ap.add_argument("--no-shadow", action="store_true", help="do not copy web-component shadow DOM into the page before extraction")
     ap.add_argument("--accept-cookies", action="store_true", help="click a consent 'Akzeptieren'/'Accept' button first (any frame)")
+    ap.add_argument("--menus", choices=["inline", "off", "only"], help="inline (default): menus as tables, the top bar first under '## Kopfleiste'; off: none; only: just the menus")
     ap.add_argument("--keep-nav", action="store_true", help="full mode: keep nav/header/footer and link-heavy sidebars in place (otherwise menus become tables, the top bar first under '## Kopfleiste')")
     ap.add_argument("--no-details", action="store_true", help="do not open collapsed <details> sections")
     ap.add_argument("--images", action="store_true", help="keep Markdown image links (dropped by default)")

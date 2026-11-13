@@ -195,23 +195,31 @@ def menu_table(items, label, notes):
 
 
 def with_menus(body, menus, chosen, o, notes, header=True):
-    """Put the top bar in front of the extracted text as a table under '## Kopfleiste', and turn the nav placeholders full mode left (RPNAV3) into tables labelled with the nav's aria-label. keep_nav in full mode leaves both in place as they are."""
-    if o["keep_nav"] and chosen == "full":
+    """Put the top bar in front of the extracted text as a table under '## Kopfleiste', and turn the nav placeholders full mode left (RPNAV3) into tables labelled with the nav's aria-label. keep_nav in full mode leaves both in place as they are. menus='off' drops them, menus='only' returns the tables alone."""
+    if o["menus"] == "off":
+        return NAV_TOKEN_RE.sub("", body)
+    if o["menus"] != "only" and o["keep_nav"] and chosen == "full":
         return body
-    navs, seen = menus["navs"], set()
+    navs, seen, targets = menus["navs"], set(), set()
 
-    # A nav whose entries repeat an earlier one is the same menu twice (heise's site index) and adds nothing.
+    # A nav that repeats an earlier one adds nothing: the same entries (heise's site index twice), or only links to targets an earlier menu already had (Geizhals' pagination above and below the list, the lower one with an extra "nächste" to page 2).
     def nav(m):
         n = int(m.group(1))
         if n >= len(navs):
             return ""
         texts = tuple(t for t, _ in navs[n]["items"])
-        if texts in seen:
+        hrefs = {h for _, h in navs[n]["items"] if h}
+        if texts in seen or (hrefs and hrefs <= targets):
             return ""
         seen.add(texts)
+        targets.update(hrefs)
         table = menu_table(navs[n]["items"], navs[n]["label"], notes)
         return f"**{navs[n]['label']}:**\n\n{table}" if navs[n]["label"] else table
-    body = NAV_TOKEN_RE.sub(nav, body)
+    if o["menus"] == "only":
+        body = "\n\n".join(t for t in (nav(NAV_TOKEN_RE.match(f"RPNAV{n}")) for n in range(len(navs))) if t)
+        notes.append("menus only: page text left out")
+    else:
+        body = NAV_TOKEN_RE.sub(nav, body)
     if not header:
         return body
     table = menu_table(menus["header"], "Kopfleiste", notes)

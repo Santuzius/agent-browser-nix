@@ -24,6 +24,7 @@ LINK_KEYS = LinkKeys()
 BROWSER = Renderer(concurrency=int(os.environ.get("RENDERER_CONCURRENCY", "4")), link_keys=LINK_KEYS)
 
 RENDER_PROPS = {
+    "menus": {"type": "string", "enum": ["inline", "off", "only"], "description": "inline (default): the top bar first as a table under '## Kopfleiste', other menus as tables where they stand; off: no menus, e.g. when reading many search result pages; only: just the menu tables, to navigate."},
     "mode": {"type": "string", "enum": ["auto", "defuddle", "readability", "full", "html"], "description": "Extractor. auto (default) picks the best of Defuddle/Readability/full; full = whole page minus nav and banners, best for lists; readability = single article or job ad."},
     "grep": {"type": "string", "description": "Return only lines matching this regex (case-insensitive), each with the heading above it. E.g. 'm/w/d|w/m/d' on a job list."},
     "exclude": {"type": "string", "description": "Drop lines matching this regex, e.g. 'Ausbildung|Praktikum|Werkstudent'."},

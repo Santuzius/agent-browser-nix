@@ -115,7 +115,8 @@ On the command line (`web-renderer --help`) the same options apply, plus `--urls
   - Menus become compact tables, eight entries per row, holding their visible links, labelled buttons and settings (`◉ Standard`, `☐ Name`, `Sprache: Deutsch ▾`):
     - the top bar (the page's first `header`, else its first `nav`) comes first under `## Kopfleiste`;
     - every other `nav` outside header and footer (GitHub's profile tabs, Wikipedia's table of contents, breadcrumbs) stays where it stood, under its `aria-label` in bold;
-    - a repeat of an earlier menu is left out, and so are entries of closed hover menus; their parent link usually leads to the same pages.
+    - a repeat of an earlier menu (same entries, or only links an earlier menu already had) is left out, and so are entries of closed hover menus; their parent link usually leads to the same pages;
+    - `menus: off` leaves all menus out, e.g. when reading many search result pages; `menus: only` returns just the tables.
   - With `grep`, the whole page is always searched.
   - If injecting the extractors fails, the page's plain text is returned.
 - **iframes and web components:** Every visible iframe becomes a section of its own; web-component shadow DOM is flattened into the page.
