@@ -97,6 +97,7 @@ On 2026-10-07 a dozen agents searched municipal, utility and company careers pag
 |----------------|--------------------------------------------------------------------------------------------------------|
 | `render_page`  | One page as Markdown. Options: `pages`, `fill`/`select`/`submit`, `click_rows`, `grep`/`exclude`, `links`/`links_only`, `accept_cookies`, `mode`, `max_length`/`part`/`start`, `full_urls`, `browser` |
 | `render_pages` | Up to 30 URLs with the same options, 4 at a time, one section per URL                                   |
+| `link_urls`    | Full addresses behind link keys (`L7`) from earlier results; `render_page` accepts keys directly |
 | `find_careers` | Home page → careers pages (best first) and the ATS behind them, with a ready `ats_jobs` call            |
 | `ats_jobs`     | Every opening from the ATS: `title \| location \| date \| URL`, filtered by `query`/`location`/`exclude` |
 
@@ -116,7 +117,7 @@ On the command line (`web-renderer --help`) the same options apply, plus `--urls
 - **iframes and web components:** Every visible iframe becomes a section of its own; web-component shadow DOM is flattened into the page.
 - **PDF:** pypdf reads the text layer.
 - **Times:** Milliseconds; values below 100 are read as seconds.
-- **Output size:** Link texts are tidied, jump marks (`#offerlist`) and repeated targets become plain text, and targets over 100 characters lose their parameters (`https://geizhals.de/x.html?…`) or, if still long, their deeper path (`https://geizhals.de/redir/…`); `full_urls` keeps them. On a Geizhals product page with 32 offers this cut 57,000 characters to 23,000. Longer output is cut at paragraph breaks into parts; the footer says `[part 1/3 …; next: part=2]`.
+- **Output size:** Link texts are tidied, jump marks (`#offerlist`) and repeated targets become plain text, and targets over 100 characters become short keys (`[zum Angebot](L7)`). The server keeps the full addresses until it restarts: `render_page` opens a key directly, `link_urls` returns the address. On the command line, where nothing outlives the call, such targets lose their parameters (`https://geizhals.de/x.html?…`) or, if still long, their deeper path (`https://geizhals.de/redir/…`). `full_urls` keeps them whole. On a Geizhals product page with 32 offers this cut 57,000 characters to 23,000. Longer output is cut at paragraph breaks into parts; the footer says `[part 1/3 …; next: part=2]`.
 - **Bot checks:** Headless Chromium does not pass Cloudflare (Geizhals answered "Nur einen Moment…" every time on 2026-11-13). With `browser: "auto"` (default) the renderer then reads the page again in the agent Vivaldi, starting it if needed; `browser: "agent"` goes there directly, e.g. for pages behind a login made in that profile. That path uses raw DevTools calls (`src/web_renderer/agent_vivaldi.py`), because Playwright's `connect_over_cdp` hangs on Vivaldi. It supports load-more buttons, `scroll`, `grep`, `links` and parts, but not `pages`, forms, `click_rows` or iframes.
 - **Process:** One Chromium serves the whole process, with a fresh context per call and at most `RENDERER_CONCURRENCY` (default 4) pages at once. Requests are answered as they finish, so a slow page does not block the others.
 

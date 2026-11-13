@@ -15,12 +15,13 @@ import urllib.parse
 from . import ats
 from .extraction import LINKS
 from .headless import UA
-from .markdown import format_markdown
+from .markdown import LinkKeys, format_markdown
 from .page_actions import settle
 from .render import Renderer
 
 PROTOCOL_VERSION = "2025-06-18"
-BROWSER = Renderer(concurrency=int(os.environ.get("RENDERER_CONCURRENCY", "4")))
+LINK_KEYS = LinkKeys()
+BROWSER = Renderer(concurrency=int(os.environ.get("RENDERER_CONCURRENCY", "4")), link_keys=LINK_KEYS)
 
 RENDER_PROPS = {
     "mode": {"type": "string", "enum": ["auto", "defuddle", "readability", "full", "html"], "description": "Extractor. auto (default) picks the best of Defuddle/Readability/full; full = whole page minus nav and banners, best for lists; readability = single article or job ad."},
@@ -32,7 +33,7 @@ RENDER_PROPS = {
     "max_length": {"type": "integer", "description": "Characters per part (default 20000, 0 = all). Longer pages are cut at paragraph breaks into parts 1/n; the footer names the next part."},
     "part": {"type": "integer", "description": "Which part to return (1-based), e.g. 2 after a footer '[part 1/3 …; next: part=2]'. The page is rendered again, so prefer grep for a single fact."},
     "start": {"type": "integer", "description": "Character offset, an alternative to part."},
-    "full_urls": {"type": "boolean", "description": "Keep link targets longer than 100 characters (parameters or deeper path cut to … by default; tracking and redirect links otherwise eat half the output)."},
+    "full_urls": {"type": "boolean", "description": "Keep link targets longer than 100 characters (replaced by short keys such as L7 by default, since tracking and redirect links otherwise eat half the output; render_page accepts a key as url, link_urls returns the address)."},
     "browser": {"type": "string", "enum": ["auto", "headless", "agent"], "description": "auto (default): headless Chromium, and the agents' visible Vivaldi (logged in, passes Cloudflare) if headless hits a bot check. agent: always Vivaldi, e.g. for pages behind the user's login; pages/fill/select/click_rows/iframes are not available there."},
     "accept_cookies": {"type": "boolean", "description": "Click an 'Akzeptieren'/'Accept' consent button first (any frame). Needed when content stays hidden or a backdrop blocks clicks."},
     "wait": {"type": "integer", "description": "Milliseconds to wait for the network to go idle after load and after each click (default 8000). Values below 100 are read as seconds."},
@@ -43,7 +44,7 @@ TOOLS = [
         "name": "render_page",
         "description": "Render one page in headless Chromium and return it as Markdown. Use for JavaScript pages, job portals and lists (web_url_read sees no JavaScript; fetch_url drops list items). Clicks load-more buttons automatically ('Mehr laden', 'Load more', …; expand_pattern for others), reads iframes and web components, opens PDFs. Can also follow pagination (pages), fill and submit a search form (fill/select/submit), and open rows that have no links (click_rows). Returns Note: lines saying what it did; read them.",
         "inputSchema": {"type": "object", "required": ["url"], "properties": {
-            "url": {"type": "string"},
+            "url": {"type": "string", "description": "Address, or a link key such as L7 from an earlier result."},
             **RENDER_PROPS,
             "pages": {"type": "integer", "description": "Follow pagination up to page N ('Weiter', '›', rel=next, else the button labelled with the next number). Each page follows as '## Seite N'."},
             "expand": {"type": "integer", "description": "Click load-more buttons up to N times (default 10, 0 = off); stops when a click adds no text."},
@@ -63,7 +64,12 @@ TOOLS = [
     {
         "name": "render_pages",
         "description": "Render several pages at once (shared browser, up to 4 in parallel) with the same options, e.g. the job lists of ten municipalities filtered with grep='m/w/d'. One section per URL; failures are reported per URL and do not stop the others.",
-        "inputSchema": {"type": "object", "required": ["urls"], "properties": {"urls": {"type": "array", "items": {"type": "string"}, "maxItems": 30}, **RENDER_PROPS}},
+        "inputSchema": {"type": "object", "required": ["urls"], "properties": {"urls": {"type": "array", "items": {"type": "string"}, "maxItems": 30, "description": "Addresses or link keys such as L7."}, **RENDER_PROPS}},
+    },
+    {
+        "name": "link_urls",
+        "description": "Full addresses behind link keys (L7, …) from earlier render_page results, e.g. to open one with the browser tool. render_page itself accepts keys directly.",
+        "inputSchema": {"type": "object", "required": ["keys"], "properties": {"keys": {"type": "array", "items": {"type": "string"}, "description": "Link keys, e.g. [\"L7\", \"L12\"]."}}},
     },
     {
         "name": "find_careers",
@@ -222,20 +228,28 @@ async def ats_jobs(a):
 async def call_tool(name, a):
     if name == "render_page":
         opts = {k: v for k, v in a.items() if k != "url"}
-        return format_markdown(await BROWSER.render(a["url"], **opts))
+        return format_markdown(await BROWSER.render(LINK_KEYS.url(a["url"]), **opts))
     if name == "render_pages":
         opts = {k: v for k, v in a.items() if k != "urls"}
 
         async def one(u):
             try:
-                return f"===== {u}\n" + format_markdown(await BROWSER.render(u, **opts))
+                return f"===== {u}\n" + format_markdown(await BROWSER.render(LINK_KEYS.url(u), **opts))
             except Exception as e:
                 return f"===== {u}\nError: {str(e).splitlines()[0]}"
         return "\n\n".join(await asyncio.gather(*(one(u) for u in a["urls"])))
+    if name == "link_urls":
+        lines = []
+        for key in a["keys"]:
+            try:
+                lines.append(f"{key} {LINK_KEYS.url(key)}")
+            except ValueError as e:
+                lines.append(f"{key} {e}")
+        return "\n".join(lines)
     if name == "find_careers":
-        return await find_careers(a["url"])
+        return await find_careers(LINK_KEYS.url(a["url"]))
     if name == "ats_jobs":
-        return await ats_jobs(a)
+        return await ats_jobs({**a, "url": LINK_KEYS.url(a["url"])} if a.get("url") else a)
     raise RuntimeError(f"unknown tool {name}")
 
 

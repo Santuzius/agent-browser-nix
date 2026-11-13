@@ -9,7 +9,7 @@ from .markdown import clean_markdown, filter_lines, parts
 from .options import normalise
 
 
-async def render(chromium, url, **opts):
+async def render(chromium, url, link_keys=None, **opts):
     """Render one URL. Returns a dict with title, url, mode, notes, content (one part), total_chars, start, end, part, parts, links, rows.
 
     browser: "headless" (own Chromium), "agent" (the agents' visible Vivaldi, see agent_vivaldi.py) or "auto": headless, and the agent Vivaldi when headless hits a bot check."""
@@ -28,12 +28,12 @@ async def render(chromium, url, **opts):
                     title, final_url, body, modes, links[:] = await agent_vivaldi.render(url, o, notes)
                 except Exception as e:
                     notes.append(f"agent browser failed ({str(e).splitlines()[0]}); returning the bot-check page. Try the browser MCP")
-    return finish(title, final_url, body, modes, links, rows, o, notes)
+    return finish(title, final_url, body, modes, links, rows, o, notes, link_keys)
 
 
-def finish(title, final_url, body, modes, links, rows, o, notes):
+def finish(title, final_url, body, modes, links, rows, o, notes, link_keys=None):
     """Clean, filter and cut the extracted Markdown into the requested part."""
-    body = clean_markdown(body, o["images"], o["full_urls"], notes)
+    body = clean_markdown(body, o["images"], o["full_urls"], notes, final_url, link_keys)
     if o["grep"] or o["exclude"]:
         body = filter_lines(body, o["grep"], o["exclude"], o["context"])
     link_rows = []
@@ -63,7 +63,8 @@ def finish(title, final_url, body, modes, links, rows, o, notes):
 class Renderer:
     """One Chromium for the whole process, started on first use and restarted if it dies, with at most `concurrency` renders at once. Each render gets a fresh context, so cookies and consent clicks never leak between calls."""
 
-    def __init__(self, concurrency=4):
+    def __init__(self, concurrency=4, link_keys=None):
+        self.link_keys = link_keys
         self.pw = self.browser = None
         self.lock = asyncio.Lock()
         self.sem = asyncio.Semaphore(concurrency)
@@ -79,7 +80,7 @@ class Renderer:
 
     async def render(self, url, **opts):
         async with self.sem:
-            return await render(await self.get(), url, **opts)
+            return await render(await self.get(), url, self.link_keys, **opts)
 
     async def close(self):
         if self.browser:

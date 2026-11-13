@@ -1,6 +1,7 @@
 """Post-processing of the extracted Markdown (link tidying, grep, parts) and the text format of a render result."""
 
 import re
+import urllib.parse
 
 LONG_URL = 100
 
@@ -21,12 +22,37 @@ def short_url(url):
     return origin + path + ("?…" if rest else "")
 
 
-def compact_links(md, full_urls, notes):
+class LinkKeys:
+    """Short keys (L1, L2, …) for long link targets, kept for the life of the process. The MCP server runs for a whole editor session, so a key from one result still opens its full target later: render_page accepts it as url, link_urls returns the address."""
+
+    KEY_RE = re.compile(r"^L\d+$")
+
+    def __init__(self):
+        self.urls, self.keys = {}, {}
+
+    def key(self, url):
+        if url not in self.keys:
+            key = f"L{len(self.urls) + 1}"
+            self.urls[key], self.keys[url] = url, key
+        return self.keys[url]
+
+    def url(self, ref):
+        """The full URL behind a key; anything that is not a key is returned unchanged."""
+        if not self.KEY_RE.match(ref.strip()):
+            return ref
+        try:
+            return self.urls[ref.strip()]
+        except KeyError:
+            raise ValueError(f"unknown link key {ref}; keys hold only until the web-renderer server restarts, so render the page again") from None
+
+
+def compact_links(md, full_urls, notes, base_url="", link_keys=None):
     """Tidy Markdown links so they cost fewer tokens without losing a target:
     - line breaks inside link texts collapse, links without text and titles that repeat the text go;
     - jump marks within the page (#offerlist) and repeats of a target already linked above (ignoring its #fragment) become plain text: a Geizhals search result links the same product page four times (title, rating, offers, price);
-    - unless full_urls is set, targets longer than LONG_URL characters are cut as in short_url."""
+    - unless full_urls is set, targets longer than LONG_URL characters become a key from link_keys (made absolute against base_url first), or without link_keys are cut as in short_url."""
     shortened = repeated = 0
+    keys = []
     seen = set()
 
     def one(m):
@@ -41,23 +67,29 @@ def compact_links(md, full_urls, notes):
         seen.add(base)
         if title.strip().strip('"').strip() in text:
             title = ""
-        if not full_urls and len(url) > LONG_URL and short_url(url) != url:
-            shortened += 1
-            url, title = short_url(url), ""
+        if not full_urls and len(url) > LONG_URL:
+            if link_keys is not None:
+                url, title = link_keys.key(urllib.parse.urljoin(base_url, url)), ""
+                keys.append(url)
+            elif short_url(url) != url:
+                shortened += 1
+                url, title = short_url(url), ""
         return f"[{text}]({url}{title})"
     md = LINK_RE.sub(one, md)
     if shortened:
         notes.append(f"shortened {shortened} link target(s) longer than {LONG_URL} characters (parameters or deeper path cut to …); full_urls keeps them, links lists them")
+    if keys:
+        notes.append(f"{len(keys)} link target(s) longer than {LONG_URL} characters replaced by keys {keys[0]}–{keys[-1]}: render_page accepts a key as url, link_urls returns the address")
     if repeated:
         notes.append(f"{repeated} repeated link(s) to a target already linked above shown as plain text")
     return md
 
 
-def clean_markdown(md, images, full_urls, notes):
+def clean_markdown(md, images, full_urls, notes, base_url="", link_keys=None):
     if not images:
         md = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", md)
     md = re.sub(r"(?is)<(video|audio|picture|source)\b[^>]*>(.*?</\1>)?", "", md)
-    md = compact_links(md, full_urls, notes)
+    md = compact_links(md, full_urls, notes, base_url, link_keys)
     # List markers and headings left without text once images and links are gone, e.g. Geizhals' empty variant lists and Fab's gallery numbering.
     md = re.sub(r"(?m)^[ \t]*(?:[-*+]|\d+\.|#{1,6})[ \t]*$", "", md)
     md = re.sub(r"[ \t]+\n", "\n", md)
