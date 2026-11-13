@@ -117,6 +117,7 @@ On the command line (`web-renderer --help`) the same options apply, plus `--urls
     - every other `nav` outside header and footer (GitHub's profile tabs, Wikipedia's table of contents, breadcrumbs) stays where it stood, under its `aria-label` in bold;
     - a repeat of an earlier menu (same entries, or only links an earlier menu already had) is left out, and so are entries of closed hover menus; their parent link usually leads to the same pages;
     - `menus: off` leaves all menus out, e.g. when reading many search result pages; `menus: only` returns just the tables.
+  - Links without text are named after their `aria-label` or `title`, or after the parent's `aria-label` when they are its only link; the bars of Geizhals' range-slider histograms become links like `[128GB bis 250GB (17 Produkte)](…)`.
   - With `grep`, the whole page is always searched.
   - If injecting the extractors fails, the page's plain text is returned.
 - **iframes and web components:** Every visible iframe becomes a section of its own; web-component shadow DOM is flattened into the page.

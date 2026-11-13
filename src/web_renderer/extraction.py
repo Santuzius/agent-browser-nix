@@ -81,6 +81,13 @@ EXTRACT = """(args) => {
     const doc = document.cloneNode(true);
     doc.querySelectorAll('[data-rp-hidden],[role=dialog],[role=alertdialog],video,audio,picture source,canvas').forEach(e => e.remove());
     doc.querySelectorAll('[id],[class]').forEach(e => { if (re.test((e.id || '') + ' ' + (typeof e.className === 'string' ? e.className : ''))) e.remove(); });
+    // Links without text vanish from Markdown. Name them after their aria-label or title, or after the parent's aria-label when they are its only link: the bars of Geizhals' range-slider histograms are such links ("2GB bis 120GB (keine Produkte)") and set the range filter.
+    doc.querySelectorAll('a[href]').forEach(a => {
+      if ((a.textContent || '').trim() || a.querySelector('img[alt]:not([alt=""])')) return;
+      const p = a.parentElement;
+      const label = a.getAttribute('aria-label') || a.title || (p && p.querySelectorAll('a').length === 1 && p.getAttribute('aria-label')) || '';
+      if (label.trim()) a.appendChild(doc.createTextNode(label.trim()));
+    });
     return doc;
   };
   if (mode === 'defuddle' || mode === 'auto') {
