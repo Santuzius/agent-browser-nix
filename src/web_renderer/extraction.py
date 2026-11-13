@@ -121,7 +121,7 @@ EXTRACT = """(args) => {
 # Menus as compact tables, collected on the live page because visibility needs layout:
 # - header: the page's top bar, the outermost header/banner outside main, article and footer that starts within the first 400 px, else the first such nav. heise marks every teaser module with <header>, so position decides, not the tag alone.
 # - navs: every other outermost nav outside header and footer (GitHub's profile tabs, breadcrumbs, pagination). Each is marked data-rp-nav=N, which survives the clone, so full mode can put its table where the nav stood.
-# Items are the visible links and buttons in page order, without repeats. Left out: entries of closed hover or click menus, and buttons whose only text is an aria-label or screen-reader-only (tagesschau's "Untermenü Inland einblenden", carousel arrows), since they only operate the menu. Links named only by an aria-label (a logo) stay.
+# Items are the visible links, buttons and settings (radio buttons and checkboxes as '◉ Standard' / '☐ Name', selects as 'Label: choice ▾') in page order, without repeats. Left out: entries of closed hover or click menus, and buttons whose only text is an aria-label or screen-reader-only (tagesschau's "Untermenü Inland einblenden", carousel arrows), since they only operate the menu. Links named only by an aria-label (a logo) stay.
 MENUS = """() => {
   const outside = 'main, article, footer, aside, [role=main], [role=contentinfo], [role=complementary]';
   const atTop = (e) => { const r = e.getBoundingClientRect(); return r.height > 0 && r.top + scrollY < 400; };
@@ -137,7 +137,16 @@ MENUS = """() => {
   };
   const items = (containers) => {
     const out = [], seen = new Set();
-    for (const root of containers) for (const el of root.querySelectorAll('a[href], button, [role=button], [role=menuitem], [role=tab]')) {
+    for (const root of containers) for (const el of root.querySelectorAll('a[href], button, [role=button], [role=menuitem], [role=tab], input[type=radio], input[type=checkbox], select')) {
+      // Settings in a menu (Wikipedia's text size and colour): the option's label with its state, since the input itself is often styled away.
+      if (el.tagName === 'INPUT' || el.tagName === 'SELECT') {
+        const label = el.labels && el.labels[0];
+        if (el.closest('[data-rp-hidden]') || !(label ? shown(label) : shown(el))) continue;
+        const name = (label ? visibleText(label) : el.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim();
+        const text = el.tagName === 'SELECT' ? (name ? name + ': ' : '') + ((el.selectedOptions[0] || {}).text || '').trim() + ' ▾' : (el.type === 'radio' ? (el.checked ? '◉ ' : '○ ') : (el.checked ? '☑ ' : '☐ ')) + name;
+        if (text.trim().length > 2 && !seen.has(text)) { seen.add(text); out.push([text, '']); }
+        continue;
+      }
       if (el.closest('[data-rp-hidden]') || (el.parentElement && el.parentElement.closest('a, button'))) continue;
       if (!shown(el) || (el.checkVisibility && !el.checkVisibility({ opacityProperty: true, visibilityProperty: true }))) continue;
       const href = el.tagName === 'A' && /^https?:/.test(el.href) ? el.href : '';
@@ -191,10 +200,10 @@ def with_menus(body, menus, chosen, o, notes, header=True):
         return body
     navs, seen = menus["navs"], set()
 
-    # A nav without any link only holds buttons that work the page (Wikipedia's "Verbergen"), and a nav whose entries repeat an earlier one is the same menu twice (heise's site index).
+    # A nav whose entries repeat an earlier one is the same menu twice (heise's site index) and adds nothing.
     def nav(m):
         n = int(m.group(1))
-        if n >= len(navs) or not any(h for _, h in navs[n]["items"]):
+        if n >= len(navs):
             return ""
         texts = tuple(t for t, _ in navs[n]["items"])
         if texts in seen:
