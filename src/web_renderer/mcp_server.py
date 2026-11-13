@@ -1,4 +1,4 @@
-"""MCP server over stdio (`web-renderer mcp`): render pages in headless Chromium (in the agent Vivaldi after a bot check), find an employer's careers page and read job lists straight from the applicant tracking system behind it.
+"""MCP server over stdio (`web-renderer mcp`): render pages in headless Chromium (in the agent Vivaldi after a bot check), find an employer's careers page and read job lists straight from the applicant tracking system behind it, and browse Geizhals as structured data (geizhals.py).
 
 Why it exists: fetcher-mcp (Readability over one page) drops list items, ignores load-more buttons, pagination, iframes and forms, and a job search with a dozen agents on 2026-10-07 spent most of its ~1,400 tool calls working around that with render-page.py over Bash, curl loops and throwaway parsers. The same capabilities are tools here, so agents without Bash can use them and nobody rewrites a Workday client again. Requests are handled concurrently: one Chromium, a fresh context per call, at most RENDERER_CONCURRENCY pages at once.
 
@@ -12,7 +12,7 @@ import re
 import sys
 import urllib.parse
 
-from . import ats
+from . import ats, geizhals
 from .extraction import LINKS
 from .headless import UA
 from .markdown import LinkKeys, format_markdown
@@ -94,6 +94,46 @@ TOOLS = [
             "location": {"type": "string", "description": "Regex over location, e.g. 'Mannheim|Heidelberg|Karlsruhe'. Workday also narrows server-side by its location facets (English names: 'Mannheim|Germany'), otherwise large employers exceed Workday's 2,000-hit cap."},
             "exclude": {"type": "string", "description": "Regex of titles to drop, e.g. 'Ausbildung|Praktikum|Werkstudent|Duales'."},
             "limit": {"type": "integer", "description": "Maximum jobs to list (default 200)."},
+        }},
+    },
+    {
+        "name": "geizhals_categories",
+        "description": "Geizhals category tree (the menus behind the breadcrumb, from Geizhals' own JSON endpoint; fast, no browser). No arguments: the 14 areas. area=N: that area's tree. query: categories whose name matches (regex) or whose cat id equals it, each with path up to the area, children (incl. preset filters such as 'M.2 (PCIe) [cat=hdssd xf=7525_M.2 (PCIe)]') and siblings. Ids in brackets go straight into geizhals_list (cat, add=[xf]).",
+        "inputSchema": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "Regex over category names, or a cat id, e.g. 'SSD', 'Grafikkarten', 'hdssd'."},
+            "area": {"type": "integer", "minimum": 1, "maximum": 14, "description": "Area number (m), e.g. 1 = Hardware; limits query to it, or alone lists its tree."},
+            "depth": {"type": "integer", "description": "Levels shown with area alone (default 2)."},
+        }},
+    },
+    {
+        "name": "geizhals_list",
+        "description": "A Geizhals product list as a table (name with product id, price, price per unit, availability, rating, offer count, the list's spec columns), plus path, page count, sort options, active filters and every filter of the category as short xf tokens (ADATA (45) under 'Hersteller [7136]' = token 7136_ADATA; ranges ID_MIN*MAX). Change the list with add/remove tokens, sort, page, price limits instead of building URLs. Closed filter groups open with all_filters. Use instead of render_page for Geizhals lists.",
+        "inputSchema": {"type": "object", "properties": {
+            "url": {"type": "string", "description": "Any Geizhals list URL (category, filtered list, search), or a link key."},
+            "cat": {"type": "string", "description": "Category id, e.g. 'hdssd' (from geizhals_categories)."},
+            "search": {"type": "string", "description": "Search text (fs=), alone or within cat."},
+            "add": {"type": "array", "items": {"type": "string"}, "description": "xf tokens to add, e.g. ['7136_Samsung', '7138_1000000*2000000']."},
+            "remove": {"type": "array", "items": {"type": "string"}, "description": "xf tokens to remove."},
+            "sort": {"type": "string", "description": "Sort key as listed under Sort, e.g. 'p' (price), 'r' (price per unit), 'bew' (rating), '-p'; '' = default."},
+            "page": {"type": "integer"},
+            "pagesize": {"type": "integer", "enum": [30, 100]},
+            "price_min": {"type": "number", "description": "Lowest price in euro (bpmin)."},
+            "price_max": {"type": "number", "description": "Highest price in euro (bpmax)."},
+            "incl_shipping": {"type": "boolean", "description": "Prices including shipping (t=v)."},
+            "params": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Further URL parameters, e.g. {'allvalues': 'true'} for all values of a filter (shown as 'more values'), {'hloc': 'de'}; '' removes one."},
+            "all_filters": {"type": "boolean", "description": "Open every filter group (clicks 'Alle Filter ausklappen'); otherwise closed groups are only named."},
+            "filters": {"type": "boolean", "description": "List the filters (default true); false for paging through results."},
+            "max_products": {"type": "integer", "description": "Rows to show (default 100)."},
+        }},
+    },
+    {
+        "name": "geizhals_product",
+        "description": "A Geizhals product page: offers as a table (price, shop, country, shop rating, availability, delivery time, shipping and payment), variant products and the full data sheet. Opens in the agent Vivaldi, since headless Chromium gets Cloudflare's check on product pages.",
+        "inputSchema": {"type": "object", "required": ["product"], "properties": {
+            "product": {"type": "string", "description": "Product id from geizhals_list ('a3265324'), or a product URL or link key."},
+            "incl_shipping": {"type": "boolean", "description": "Prices including shipping."},
+            "countries": {"type": "string", "description": "Shop countries, comma-separated: de, at, eu, …"},
+            "max_offers": {"type": "integer", "description": "Offers to show (default 30)."},
         }},
     },
 ]
@@ -251,6 +291,13 @@ async def call_tool(name, a):
         return await find_careers(LINK_KEYS.url(a["url"]))
     if name == "ats_jobs":
         return await ats_jobs({**a, "url": LINK_KEYS.url(a["url"])} if a.get("url") else a)
+    if name == "geizhals_categories":
+        return await asyncio.to_thread(geizhals.categories, a.get("query"), a.get("area"), a.get("depth") or 2)
+    if name in ("geizhals_list", "geizhals_product"):
+        a = {**a, **{k: LINK_KEYS.url(a[k]) for k in ("url", "product") if a.get(k)}}
+        chromium = await BROWSER.get()
+        async with BROWSER.sem:
+            return await (geizhals.geizhals_list if name == "geizhals_list" else geizhals.geizhals_product)(chromium, a)
     raise RuntimeError(f"unknown tool {name}")
 
 

@@ -75,6 +75,7 @@ claude mcp add --scope user web-renderer -- web-renderer mcp
 | `src/web_renderer/markdown.py` | link tidying, grep, parts, output format |
 | `src/web_renderer/options.py`, `environment.py` | option defaults; nixpkgs' Python when run from the checkout |
 | `src/web_renderer/ats.py` | ATS adapters |
+| `src/web_renderer/geizhals.py` | Geizhals category tree, product lists and product pages as structured data |
 | `icon/` | icon of the agent Vivaldi and the robot badge it is made from |
 
 To try a change without a rebuild, run the package from `src/` (`python3 -m web_renderer URL`); it then builds the same Python environment itself on first run. The icon is made in `icon/` with `rsvg-convert -w 100 -h 100 robot-badge.svg -o badge.png && magick <vivaldi>/share/icons/hicolor/256x256/apps/vivaldi.png badge.png -gravity southeast -geometry +6+6 -composite -strip agent-browser.png`.
@@ -100,6 +101,9 @@ On 2026-10-07 a dozen agents searched municipal, utility and company careers pag
 | `link_urls`    | Full addresses behind link keys (`L7`) from earlier results; `render_page` accepts keys directly |
 | `find_careers` | Home page → careers pages (best first) and the ATS behind them, with a ready `ats_jobs` call            |
 | `ats_jobs`     | Every opening from the ATS: `title \| location \| date \| URL`, filtered by `query`/`location`/`exclude` |
+| `geizhals_categories` | Geizhals category tree: areas, one area's tree, or matching categories with path, children (incl. preset filters) and siblings |
+| `geizhals_list` | A Geizhals product list as a table, with sort options, pages, active filters and every filter as a short `xf` token; changed with `add`/`remove`, `sort`, `page`, `price_min`/`price_max` |
+| `geizhals_product` | Offers (price, shop, country, shop rating, availability, delivery, shipping) and data sheet of one product |
 
 On the command line (`web-renderer --help`) the same options apply, plus `--urls FILE --parallel N` for batches and `--python SCRIPT` to run an own Playwright script in the same environment.
 
@@ -126,6 +130,13 @@ On the command line (`web-renderer --help`) the same options apply, plus `--urls
 - **Output size:** Link texts are tidied, jump marks (`#offerlist`) and repeated targets become plain text, and targets over 100 characters become short keys (`[zum Angebot](L7)`). The server keeps the full addresses until it restarts: `render_page` opens a key directly, `link_urls` returns the address. On the command line, where nothing outlives the call, such targets lose their parameters (`https://geizhals.de/x.html?…`) or, if still long, their deeper path (`https://geizhals.de/redir/…`). `full_urls` keeps them whole. On a Geizhals product page with 32 offers this cut 57,000 characters to 23,000. Longer output is cut at paragraph breaks into parts; the footer says `[part 1/3 …; next: part=2]`.
 - **Bot checks:** Headless Chromium does not pass Cloudflare (Geizhals answered "Nur einen Moment…" every time on 2026-11-13). With `browser: "auto"` (default) the renderer then reads the page again in the agent Vivaldi, starting it if needed; `browser: "agent"` goes there directly, e.g. for pages behind a login made in that profile. That path uses raw DevTools calls (`src/web_renderer/agent_vivaldi.py`), because Playwright's `connect_over_cdp` hangs on Vivaldi. It supports load-more buttons, `scroll`, `grep`, `links` and parts, but not `pages`, forms, `click_rows` or iframes.
 - **Process:** One Chromium serves the whole process, with a fresh context per call and at most `RENDERER_CONCURRENCY` (default 4) pages at once. Requests are answered as they finish, so a slow page does not block the others.
+
+## Geizhals (`src/web_renderer/geizhals.py`)
+
+- **Categories:** from the JSON endpoint behind the breadcrumb menus (`POST /api/gh0/categories` with `{"params": {"m": "1", "lang": "de"}}`), which answers without a browser. Each node carries its id: area `m=1`, group `o=3`, category `cat=hdssd`, or a category with a preset filter such as `cat=hdssd xf=7525_M.2 (PCIe)`. Trees are cached for 15 minutes.
+- **Lists:** rendered in headless Chromium. Cloudflare lays a check dialog over the page, but the content beneath is complete; the dialog is removed before any click. One JavaScript function reads products, filters, sort options and pagination. Filters come as tokens of the `xf` URL parameter (`ID_VALUE`, ranges `ID_MIN*MAX`), read off the option links, so `ab 480GB` under `Kapazität ab [7139]` is the token `7139_>=480GB`. `promode=true` is set by default, since the simple filter mode shows fewer filters.
+- **Products:** headless Chromium gets Cloudflare's full check here, so product pages open in the agent Vivaldi. Shop links are session-bound redirects and are left out.
+- **URL parameters:** `sort`, `pg` (page), `pagesize` (30, 100), `fs` (search), `bpmin`/`bpmax` (price), `t=v` (price incl. shipping), `hloc` (shop countries), `allvalues=true` (all values of a filter).
 
 ## ATS adapters (`src/web_renderer/ats.py`, stdlib only)
 
