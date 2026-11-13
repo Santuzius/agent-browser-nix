@@ -13,6 +13,7 @@ CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "web-re
 AUTO_FULL_RATIO = 1.3
 AUTO_FRAGMENT_RATIO = 3
 AUTO_SMALL_PAGE = 3000
+AUTO_DROPPED_SHARE = 0.25
 NOISE_SELECTOR_RE = r"cookie|consent|gdpr|usercentrics|borlabs|klaro|cmp[-_]|onetrust|ccm-|skip-?link"
 
 
@@ -132,23 +133,34 @@ def heading_key(line):
     return re.sub(r"\]\([^)]*\)|[^\w]+", "", line).lower()
 
 
+def section_weights(md):
+    """Text weight under each heading, keyed by heading_key; the first occurrence of a heading counts."""
+    weights, key, size = {}, None, 0
+    for line in md.split("\n"):
+        m = HEADING_RE.match(line)
+        if m:
+            if key is not None:
+                weights.setdefault(key, size)
+            key, size = heading_key(m.group(1)), 0
+        elif key is not None:
+            size += text_weight(line)
+    if key is not None:
+        weights.setdefault(key, size)
+    return weights
+
+
 def emptied_sections(extracted, full):
     """Headings the extractor kept but left empty while the whole page has text under them. Readability did this to the spec table and document list of a Geizhals product page (2026-11-13), which the length ratio alone did not catch because the page also carries a long sidebar."""
-    def sections(md):
-        out, key, size = {}, None, 0
-        for line in md.split("\n"):
-            m = HEADING_RE.match(line)
-            if m:
-                if key is not None:
-                    out.setdefault(key, size)
-                key, size = heading_key(m.group(1)), 0
-            elif key is not None:
-                size += text_weight(line)
-        if key is not None:
-            out.setdefault(key, size)
-        return out
-    mine, whole = sections(extracted), sections(full)
+    mine, whole = section_weights(extracted), section_weights(full)
     return [k for k, size in mine.items() if k and size < 20 and whole.get(k, 0) >= 60]
+
+
+def dropped_sections(extracted, full):
+    """Headings of the whole page that the extractor left out together with their text, if that text is at least AUTO_DROPPED_SHARE of the page. Defuddle dropped the offer list of a Geizhals product page this way, heading included, so the shop names were gone (2026-11-13)."""
+    mine, whole = section_weights(extracted), section_weights(full)
+    dropped = [k for k, size in whole.items() if k and k not in mine and size >= 60]
+    total = sum(whole.values()) or 1
+    return dropped if sum(whole[k] for k in dropped) >= AUTO_DROPPED_SHARE * total else []
 
 
 def pick(res, mode, notes):
@@ -161,13 +173,16 @@ def pick(res, mode, notes):
         full = text_weight(res["full"]["content"])
         # If the whole page is barely longer than the best extraction, the page is nearly all content and the extractor only risks dropping items (Defuddle lost 3 of 21 jobs on a Jobcluster list). Much longer means the extractor cut real boilerplate, so keep its result, unless it emptied sections the page has text in.
         emptied = emptied_sections(res[chosen]["content"], res["full"]["content"])
+        dropped = dropped_sections(res[chosen]["content"], res["full"]["content"])
         # Under a third is not boilerplate removal but a wrong guess at the "article": on the Geizhals search (2026-11-13) Readability returned only the price disclaimer below a 30-item product grid.
         fragment = full > AUTO_FRAGMENT_RATIO * weights[chosen]
         # A short page costs few tokens even whole, and extractors cut its sidebars, where shops keep price and license (Fab, 2026-11-13).
         small = full <= AUTO_SMALL_PAGE
-        if full >= weights[chosen] and (weights[chosen] < 200 or small or full <= AUTO_FULL_RATIO * weights[chosen] or emptied or fragment):
+        if full >= weights[chosen] and (weights[chosen] < 200 or small or full <= AUTO_FULL_RATIO * weights[chosen] or emptied or dropped or fragment):
             if emptied:
                 notes.append(f"{chosen} left {len(emptied)} section(s) empty that have text on the page; using full")
+            elif dropped:
+                notes.append(f"{chosen} dropped {len(dropped)} section(s) holding at least {AUTO_DROPPED_SHARE:.0%} of the page text; using full")
             elif fragment:
                 notes.append(f"{chosen} kept less than 1/{AUTO_FRAGMENT_RATIO} of the page text; using full")
             chosen = "full"

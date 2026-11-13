@@ -8,16 +8,24 @@ LINK_RE = re.compile(r"(?<!!)\[([^\[\]]*)\]\(([^)\s]*)((?:\s+\"[^\"]*\")?)\)")
 
 
 def short_url(url):
-    """Host and first path segment of a long URL, e.g. 'geizhals.de/redir/…'. Tracking and redirect links (Geizhals offers, ad networks) run to 200+ characters each and made up 62 % of a Geizhals product page."""
-    m = re.match(r"https?://(?:www\.)?([^/?#]+)(/[^/?#]*)?", url)
-    return (m.group(1) + (m.group(2) or "") + "/…") if m else url[:40] + "…"
+    """A long URL cut so that it stays recognisable: without its query and fragment ('https://geizhals.de/x.html?…'), and if that alone is still long, down to the first path segment ('https://geizhals.de/redir/…'). A URL whose length is all in one path segment stays whole, since any cut would break it. Tracking and redirect links (Geizhals offers, ad networks) run to 200+ characters each and made up 62 % of a Geizhals product page."""
+    m = re.match(r"(https?://[^/?#]+)(/[^?#]*)?([?#].*)?$", url)
+    if not m:
+        return url
+    origin, path, rest = m.group(1), m.group(2) or "", m.group(3)
+    if len(origin + path) <= LONG_URL:
+        return origin + path + ("?…" if rest else "")
+    segments = path.strip("/").split("/")
+    if len(segments) > 1:
+        return f"{origin}/{segments[0]}/…"
+    return origin + path + ("?…" if rest else "")
 
 
 def compact_links(md, full_urls, notes):
     """Tidy Markdown links so they cost fewer tokens without losing a target:
     - line breaks inside link texts collapse, links without text and titles that repeat the text go;
     - jump marks within the page (#offerlist) and repeats of a target already linked above (ignoring its #fragment) become plain text: a Geizhals search result links the same product page four times (title, rating, offers, price);
-    - unless full_urls is set, targets longer than LONG_URL characters shrink to host/path/…."""
+    - unless full_urls is set, targets longer than LONG_URL characters are cut as in short_url."""
     shortened = repeated = 0
     seen = set()
 
@@ -33,13 +41,13 @@ def compact_links(md, full_urls, notes):
         seen.add(base)
         if title.strip().strip('"').strip() in text:
             title = ""
-        if not full_urls and len(url) > LONG_URL:
+        if not full_urls and len(url) > LONG_URL and short_url(url) != url:
             shortened += 1
             url, title = short_url(url), ""
         return f"[{text}]({url}{title})"
     md = LINK_RE.sub(one, md)
     if shortened:
-        notes.append(f"shortened {shortened} link target(s) longer than {LONG_URL} characters to host/path/…; full_urls keeps them, links lists them")
+        notes.append(f"shortened {shortened} link target(s) longer than {LONG_URL} characters (parameters or deeper path cut to …); full_urls keeps them, links lists them")
     if repeated:
         notes.append(f"{repeated} repeated link(s) to a target already linked above shown as plain text")
     return md
@@ -50,6 +58,8 @@ def clean_markdown(md, images, full_urls, notes):
         md = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", md)
     md = re.sub(r"(?is)<(video|audio|picture|source)\b[^>]*>(.*?</\1>)?", "", md)
     md = compact_links(md, full_urls, notes)
+    # List markers and headings left without text once images and links are gone, e.g. Geizhals' empty variant lists and Fab's gallery numbering.
+    md = re.sub(r"(?m)^[ \t]*(?:[-*+]|\d+\.|#{1,6})[ \t]*$", "", md)
     md = re.sub(r"[ \t]+\n", "\n", md)
     return re.sub(r"\n{3,}", "\n\n", md)
 

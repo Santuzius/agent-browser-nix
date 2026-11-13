@@ -32,7 +32,7 @@ RENDER_PROPS = {
     "max_length": {"type": "integer", "description": "Characters per part (default 20000, 0 = all). Longer pages are cut at paragraph breaks into parts 1/n; the footer names the next part."},
     "part": {"type": "integer", "description": "Which part to return (1-based), e.g. 2 after a footer '[part 1/3 …; next: part=2]'. The page is rendered again, so prefer grep for a single fact."},
     "start": {"type": "integer", "description": "Character offset, an alternative to part."},
-    "full_urls": {"type": "boolean", "description": "Keep link targets longer than 100 characters (shortened to host/path/… by default; tracking and redirect links otherwise eat half the output)."},
+    "full_urls": {"type": "boolean", "description": "Keep link targets longer than 100 characters (parameters or deeper path cut to … by default; tracking and redirect links otherwise eat half the output)."},
     "browser": {"type": "string", "enum": ["auto", "headless", "agent"], "description": "auto (default): headless Chromium, and the agents' visible Vivaldi (logged in, passes Cloudflare) if headless hits a bot check. agent: always Vivaldi, e.g. for pages behind the user's login; pages/fill/select/click_rows/iframes are not available there."},
     "accept_cookies": {"type": "boolean", "description": "Click an 'Akzeptieren'/'Accept' consent button first (any frame). Needed when content stays hidden or a backdrop blocks clicks."},
     "wait": {"type": "integer", "description": "Milliseconds to wait for the network to go idle after load and after each click (default 8000). Values below 100 are read as seconds."},

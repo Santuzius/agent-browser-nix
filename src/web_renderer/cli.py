@@ -32,7 +32,7 @@ def pairs(items):
 
 
 def main():
-    ap = argparse.ArgumentParser(prog="web-renderer", description=__doc__.split("\n\n")[0], epilog="web-renderer mcp runs the stdio MCP server (render_page, render_pages, find_careers, ats_jobs) instead.\n\nExtraction modes: auto runs Defuddle, Readability and full side by side and keeps the extractor's result unless the page holds at most 3,000 characters, the extractor kept less than a third of the text or left a section empty; then it takes full; defuddle = Obsidian Web Clipper's engine, good on lists and portals; readability = Firefox reader view, good on single articles and job ads; full = whole page minus navigation, banners and hidden elements; html = rendered HTML for debugging.\n\niframes: separate (default) extracts every visible iframe as a page of its own and prints it as a section after the main page; inline copies iframe contents into the parent page; off ignores them.\n\nTimes are milliseconds; values below 100 are read as seconds.", formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(prog="web-renderer", description=__doc__.split("\n\n")[0], epilog="web-renderer mcp runs the stdio MCP server (render_page, render_pages, find_careers, ats_jobs) instead.\n\nExtraction modes: auto runs Defuddle, Readability and full side by side and keeps the extractor's result unless the page holds at most 3,000 characters, the extractor kept less than a third of the text, left a section empty or dropped sections holding a quarter of the text; then it takes full; defuddle = Obsidian Web Clipper's engine, good on lists and portals; readability = Firefox reader view, good on single articles and job ads; full = whole page minus navigation, banners and hidden elements; html = rendered HTML for debugging.\n\niframes: separate (default) extracts every visible iframe as a page of its own and prints it as a section after the main page; inline copies iframe contents into the parent page; off ignores them.\n\nTimes are milliseconds; values below 100 are read as seconds.", formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("url", nargs="?")
     ap.add_argument("--urls", metavar="FILE", help="render every URL in FILE (one per line; a leading name before the URL is allowed, '#' starts a comment), '-' for stdin")
     ap.add_argument("--parallel", type=int, default=4, help="pages rendered at once with --urls (default 4)")
@@ -41,7 +41,7 @@ def main():
     ap.add_argument("--max-length", type=int, default=20000, help="characters to print (default 20000, 0 = all)")
     ap.add_argument("--part", type=int, help="print part N of a page longer than --max-length (cut at paragraph breaks)")
     ap.add_argument("--start", type=int, default=0, help="character offset, an alternative to --part")
-    ap.add_argument("--full-urls", action="store_true", help="keep link targets longer than 100 characters (shortened to host/path/… by default)")
+    ap.add_argument("--full-urls", action="store_true", help="keep link targets longer than 100 characters (parameters or deeper path cut to … by default)")
     ap.add_argument("--browser", choices=["auto", "headless", "agent"], default="auto", help="auto: headless, and the agent Vivaldi (agent-browser) after a bot check; agent: always Vivaldi")
     ap.add_argument("--grep", metavar="REGEX", help="print only lines matching REGEX (case-insensitive), with the heading above each")
     ap.add_argument("--exclude", metavar="REGEX", help="drop lines matching REGEX, e.g. 'Ausbildung|Praktikum|Werkstudent'")
