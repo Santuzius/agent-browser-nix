@@ -107,7 +107,7 @@ async def interact_and_extract(page, o, notes, sections, links, rows):
             break
         await follow(page, target, o["wait"])
         pnotes = []
-        _, pbody, plinks = await extract_frame(page.main_frame, o, pnotes)
+        _, pbody, plinks = await extract_frame(page.main_frame, o, pnotes, header=False)
         if pbody.strip() == body.strip() or pbody in sections:
             notes.append(f"pages: page {n} repeated the previous one; stopped")
             break
@@ -121,7 +121,7 @@ async def interact_and_extract(page, o, notes, sections, links, rows):
             continue
         fnotes = []
         try:
-            fmode, fbody, frame_links = await extract_frame(frame, o, fnotes)
+            fmode, fbody, frame_links = await extract_frame(frame, o, fnotes, header=False)
         except Exception as e:
             notes.append(f"iframe {n} ({frame.url}) could not be read: {str(e).splitlines()[0]}")
             continue

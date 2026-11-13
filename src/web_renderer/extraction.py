@@ -116,7 +116,62 @@ EXTRACT = """(args) => {
   return out;
 }"""
 
+# The page's top bar: the outermost header/banner outside main, article and footer that starts within the first 400 px, else the first such nav. heise marks every teaser module with <header>, so position decides, not the tag alone. Its visible links and buttons in page order, without repeats. Left out: entries of closed hover or click menus, and buttons whose only text is an aria-label or screen-reader-only (tagesschau's "Untermenü Inland einblenden", carousel arrows), since they only operate the bar. Links named only by an aria-label (a logo) stay.
+HEADER = """() => {
+  const outside = 'main, article, footer, aside, [role=main], [role=contentinfo], [role=complementary]';
+  const atTop = (e) => { const r = e.getBoundingClientRect(); return r.height > 0 && r.top + scrollY < 400; };
+  let roots = [...document.querySelectorAll('header, [role=banner]')].filter(e => !(e.parentElement && e.parentElement.closest('header, [role=banner], ' + outside)) && !e.closest('[data-rp-hidden]') && atTop(e));
+  if (!roots.length) roots = [...document.querySelectorAll('nav, [role=navigation]')].filter(e => !e.closest(outside + ', [data-rp-hidden]') && atTop(e)).slice(0, 1);
+  // Text a sighted reader sees: screen-reader-only spans (clipped or 1 px boxes) are skipped.
+  const shown = (e) => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return r.width > 2 && r.height > 2 && s.clip === 'auto' && (s.clipPath === 'none' || !s.clipPath); };
+  const visibleText = (el) => {
+    const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let t = '';
+    for (let n = w.nextNode(); n; n = w.nextNode()) if (n.parentElement && shown(n.parentElement)) t += ' ' + n.textContent;
+    return t;
+  };
+  const items = [], seen = new Set();
+  for (const root of roots) for (const el of root.querySelectorAll('a[href], button, [role=button], [role=menuitem], [role=tab]')) {
+    if (el.closest('[data-rp-hidden]') || (el.parentElement && el.parentElement.closest('a, button'))) continue;
+    if (!shown(el) || (el.checkVisibility && !el.checkVisibility({ opacityProperty: true, visibilityProperty: true }))) continue;
+    const href = el.tagName === 'A' && /^https?:/.test(el.href) ? el.href : '';
+    const text = (visibleText(el).replace(/\\s+/g, ' ').trim() || (href && (el.getAttribute('aria-label') || el.title) || '')).replace(/\\s+/g, ' ').trim();
+    if (!text || text.length > 60) continue;
+    if (seen.has(text + '|' + href)) continue;
+    seen.add(text + '|' + href);
+    items.push([text, href]);
+  }
+  return items;
+}"""
+
 LINKS = """() => [...document.querySelectorAll('a[href]')].map(a => [(a.innerText || a.title || a.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim(), a.href]).filter(([t, h]) => h.startsWith('http'))"""
+
+
+HEADER_COLUMNS = 8
+HEADER_MAX = 48
+
+
+def header_table(items, notes):
+    """The top bar as a Markdown table, HEADER_COLUMNS cells per row: '| [Community](…) | [Neuigkeiten](…) | Anmelden |'. Buttons without a link stay plain text."""
+    if not items:
+        return ""
+    if len(items) > HEADER_MAX:
+        notes.append(f"header: {len(items)} entries, kept the first {HEADER_MAX}; keep_nav keeps the whole header")
+        items = items[:HEADER_MAX]
+    cells = [(f"[{t}]({h})" if h else t).replace("|", "\\|") for t, h in items]
+    rows = [cells[i:i + HEADER_COLUMNS] for i in range(0, len(cells), HEADER_COLUMNS)]
+    width = len(rows[0])
+    lines = ["| " + " | ".join(r + [""] * (width - len(r))) + " |" for r in rows]
+    lines.insert(1, "|" + "---|" * width)
+    return "## Kopfleiste\n\n" + "\n".join(lines)
+
+
+def with_header(body, items, chosen, o, notes):
+    """Put the top bar in front of the extracted text, unless it is already there (keep_nav in full mode)."""
+    if o["keep_nav"] and chosen == "full":
+        return body
+    table = header_table(items, notes)
+    return f"{table}\n\n{body}" if table else body
 
 
 def text_weight(md):
@@ -194,8 +249,8 @@ def pick(res, mode, notes):
     return chosen, res[chosen]["content"].strip()
 
 
-async def extract_frame(frame, o, notes):
-    """Extract one frame as a document of its own: its own CSS decides what is hidden, its own shadow roots are flattened, and the extractor is chosen for it alone. Falls back to the frame's plain innerText if the extractors cannot even be injected."""
+async def extract_frame(frame, o, notes, header=True):
+    """Extract one frame as a document of its own: its own CSS decides what is hidden, its own shadow roots are flattened, and the extractor is chosen for it alone. header puts the top bar in front as a table (off for further pages and iframes, where it would only repeat). Falls back to the frame's plain innerText if the extractors cannot even be injected."""
     try:
         if not o["no_details"]:
             await frame.evaluate("() => document.querySelectorAll('details:not([open])').forEach(d => d.open = true)")
@@ -207,6 +262,8 @@ async def extract_frame(frame, o, notes):
         await load_libs(frame)
         res = await frame.evaluate(EXTRACT, [o["mode"], o["keep_nav"], NOISE_SELECTOR_RE])
         chosen, body = pick(res, o["mode"], notes)
+        if header:
+            body = with_header(body, await frame.evaluate(HEADER), chosen, o, notes)
     except Exception as e:
         notes.append(f"extractors failed ({str(e).splitlines()[0]}); returning the page's plain text")
         chosen, body = "innertext", (await frame.evaluate("() => document.body ? document.body.innerText : ''")).strip()

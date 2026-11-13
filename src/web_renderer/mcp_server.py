@@ -57,7 +57,7 @@ TOOLS = [
             "click_rows": {"type": "string", "description": "CSS selector of list rows that open by click instead of a link (e.g. 'td.bite-jobs-list--title'); each is opened and its target URL reported."},
             "wait_for": {"type": "string", "description": "CSS selector or text=… to wait for before extracting."},
             "iframes": {"type": "string", "enum": ["separate", "inline", "off"], "description": "separate (default): each iframe as its own section; inline: merged into the page."},
-            "keep_nav": {"type": "boolean", "description": "full mode: keep nav/header/footer and link-heavy sidebars (sidebars with real text are kept anyway)."},
+            "keep_nav": {"type": "boolean", "description": "full mode: keep nav/header/footer and link-heavy sidebars in place (sidebars with real text are kept anyway). Without it the top bar's visible links and buttons come first as a table under '## Kopfleiste'."},
             "images": {"type": "boolean", "description": "Keep image links (dropped by default)."},
         }},
     },

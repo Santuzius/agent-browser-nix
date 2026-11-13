@@ -16,7 +16,7 @@ import urllib.request
 
 import websockets
 
-from .extraction import EXTRACT, FLATTEN_SHADOW, LINKS, MARK_HIDDEN, NOISE_SELECTOR_RE, extractor_scripts, pick, text_weight
+from .extraction import EXTRACT, FLATTEN_SHADOW, HEADER, LINKS, MARK_HIDDEN, NOISE_SELECTOR_RE, extractor_scripts, pick, text_weight, with_header
 
 PORT = int(os.environ.get("AGENT_BROWSER_PORT", "9333"))
 BOT_TITLE_RE = re.compile(r"just a moment|nur einen moment|einen moment bitte|attention required|checking your browser|verify(ing)? you are human|access denied|zugriff verweigert", re.I)
@@ -150,6 +150,7 @@ async def render(url, o, notes):
                 await tab.eval(script)
             res = await tab.eval(EXTRACT, [o["mode"], o["keep_nav"], NOISE_SELECTOR_RE])
             chosen, body = pick(res, o["mode"], notes)
+            body = with_header(body, await tab.eval(HEADER), chosen, o, notes)
             title, final_url = await tab.eval("() => [document.title, location.href]")
             links = await tab.eval(LINKS) if (o["links"] or o["links_only"]) else []
         finally:
