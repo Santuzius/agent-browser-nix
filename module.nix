@@ -1,7 +1,8 @@
-# Home Manager module: installs agent-browser and web-renderer, declares the extensions of the agent profile and a desktop entry.
+# Home Manager module: installs agent-browser and web-renderer, declares the extensions of the agent profile, a desktop entry and (with plasma-manager) a KWin rule that starts the window minimized.
 self:
 {
   config,
+  options,
   lib,
   pkgs,
   ...
@@ -43,6 +44,12 @@ in
       description = "Add a desktop entry \"Vivaldi (Agent)\" with its own icon, matched to the window by its class `agent-browser`.";
     };
 
+    startMinimized = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "With plasma-manager, add a KWin rule \"Vivaldi (Agent): start minimized\" for windows of class `agent-browser`. Every value is a `lib.mkDefault`, so settings dumped by `nix run github:nix-community/plasma-manager` override it instead of conflicting.";
+    };
+
     agentBrowserPackage = lib.mkOption {
       type = lib.types.package;
       readOnly = true;
@@ -56,7 +63,7 @@ in
     };
   };
 
-  config = lib.mkIf cfg.enable {
+  config = lib.mkIf cfg.enable (lib.mkMerge [ {
     programs.agent-browser = {
       agentBrowserPackage = pkgs.callPackage "${self}/agent-browser.nix" {
         vivaldiPackage = cfg.vivaldi;
@@ -87,5 +94,24 @@ in
         categories = [ "Network" "WebBrowser" ];
       };
     };
-  };
+  }
+
+  # Written as plain configFile entries instead of programs.plasma.window-rules: window-rules sets the same keys at normal priority (General.rules as a string where the plasma-manager dump has an integer), which conflicts with a dump. The group has its own name instead of a number so it does not merge into other rules; a dump or window-rules that sets General.rules at normal priority overrides the list.
+  (lib.optionalAttrs (options ? programs.plasma.configFile) {
+    programs.plasma.configFile.kwinrulesrc = lib.mkIf cfg.startMinimized (lib.mapAttrsRecursive (_: lib.mkDefault) {
+      agent-browser = {
+        Description = "Vivaldi (Agent): start minimized";
+        minimize = true;
+        minimizerule = 3;
+        wmclass = "agent-browser";
+        wmclasscomplete = false;
+        wmclassmatch = 1;
+      };
+      General = {
+        count = 1;
+        rules = "agent-browser";
+      };
+    });
+  })
+  ]);
 }

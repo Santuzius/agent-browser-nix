@@ -3,7 +3,7 @@
 Nix flake with browser tools for AI agents on Linux:
 
 - **`web-renderer`:** reads the web pages plain fetchers cannot: JavaScript lists, load-more buttons, pagination, search forms, rows without links, iframes, web components, PDFs. It also finds an employer's careers page and reads its job list straight from the applicant tracking system (ATS) behind it. `web-renderer mcp` is a stdio MCP server for agents, `web-renderer URL [options]` the same on the command line.
-- **`agent-browser`:** starts the agent Vivaldi, a visible Vivaldi with its own profile in `~/.config/agent-browser` and a DevTools port on 127.0.0.1:9333. Agents drive it through the Browser MCP extension (`@browsermcp/mcp`), and `web-renderer` reads a page there when its headless Chromium hits a bot check. The window has the class `agent-browser`, so a window rule can start it minimized.
+- **`agent-browser`:** starts the agent Vivaldi, a visible Vivaldi with its own profile in `~/.config/agent-browser` and a DevTools port on 127.0.0.1:9333. Agents drive it through the Browser MCP extension (`@browsermcp/mcp`), and `web-renderer` reads a page there when its headless Chromium hits a bot check. The window has the class `agent-browser`; with plasma-manager the module adds a KWin rule that starts it minimized (`startMinimized`, on by default, overridable by a plasma-manager dump).
 
 ## Run
 
